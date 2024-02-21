@@ -1,0 +1,22 @@
+Features of CAD2D:
+
+	1. In this application following 2D shapes can be drawn Circle, Line, Rectangle, Square, Sketch.
+
+	2. Mouse left button is used to draw the selected shape on the window.
+
+	3. Context Menu:
+	   	Right click on the window shows the following features in the context menu : Ortho, Snap, Grid, Clear.
+		
+		a. Ortho option allows the line to be drawn only in the orthogonal directions i.e, either Left or Right or Up or Down
+		b. Snap option shows the vertices of the already existing shape will be notified on the screen and can be selected as either start/end point of current drawing.
+		c. Grid option will updated the window with the grid lines.
+		d. Clear option is to delete all the existing drawings in the window.
+
+	4. Escape Key:
+		a. While drawing the shapes in the window the preview of the shapes will shown between the first click and the second click.
+		b. Pressing Escape key while drawing will remove the preview shapes.
+		c. By pressing space key, the previous shape drawing can be enabled.
+	
+	5. File Save / Open:
+		a. The drawings can be saved and loaded as a text file.
+		b. Ctrl + S and Ctrl + O shows the file explorer and existing drawings can be stroed/loaded to a text file.
