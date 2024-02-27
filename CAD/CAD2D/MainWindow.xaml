@@ -15,49 +15,57 @@
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="Height" Value="15"/>
             <Setter Property="Width" Value="200"/>
-            <Setter Property="Foreground" Value="LightSteelBlue"/>
+            <Setter Property="Foreground" Value="Black"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="HorizontalAlignment" Value="Left"/>
         </Style>
-        <Style TargetType="Button">
-            <EventSetter Event="Click" Handler="OnOptionClick"/>
+        <Style TargetType="ToggleButton">
+            <EventSetter Event="Checked" Handler="OnDrawSelection"/>
             <Setter Property="Height" Value="25"/>
-            <Setter Property="Width" Value="80"/>
+            <Setter Property="Width" Value="100"/>
             <Setter Property="Margin" Value="5"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="LightSteelBlue"/>
+            <Setter Property="Background" Value="{Binding BGLayer}"/>
+            <Setter Property="Foreground" Value="Black"/>
             <Setter Property="FontFamily" Value="Bold"/>
             <Setter Property="HorizontalAlignment" Value="Left"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Style.Resources>
                 <Style TargetType="Border">
-                    <Setter Property="BorderBrush" Value="SteelBlue"/>
-                    <Setter Property="BorderThickness" Value="3"/>
+                    <Setter Property="BorderBrush" Value="White"/>
+                    <Setter Property="BorderThickness" Value="5"/>
                     <Setter Property="CornerRadius" Value="5"/>
                 </Style>
             </Style.Resources>
         </Style>
     </Window.Resources>
     <DockPanel>
-        <StackPanel DockPanel.Dock="Top" Background="LightSteelBlue">
-            <Menu Background="LightSteelBlue">
-                <MenuItem Width="50" HorizontalAlignment="Left" Height="20" Header="_File">
+        <StackPanel DockPanel.Dock="Top" Background="{Binding BGLayer}">
+            <Menu Background="{Binding BGLayer}">
+                <MenuItem Width="50" Height="20" Header="_File">
                     <MenuItem Header="_Open" Command="ApplicationCommands.Open"/>
                     <MenuItem Header="_Save" Command="ApplicationCommands.Save"/>
+                    <MenuItem Header="_SaveAs" Command="ApplicationCommands.SaveAs"/>
+                </MenuItem>
+                <MenuItem Width="50" Height="20" Header="_Edit">
+                    <MenuItem Header="_Undo" Command="ApplicationCommands.Undo"/>
+                    <MenuItem Header="_Redo" Command="ApplicationCommands.Redo"/>
+                    <MenuItem Header="_Delete" Command="ApplicationCommands.Delete"/>
+                    <MenuItem Header="_Select All" Command="ApplicationCommands.SelectAll"/>
                 </MenuItem>
             </Menu>
         </StackPanel>
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Background="{Binding BGLayer}">
             <TextBlock x:Name="mCoordinatesTBlock" Margin="20, 0,0 0"/>
-            <TextBlock x:Name="mPromptTBlock"/>
+            <TextBlock x:Name="mPromptTBlock" Width="Auto"/>
         </StackPanel>
-        <StackPanel Margin="0,50" Height="Auto" DockPanel.Dock="Left" HorizontalAlignment="Left">
-            <StackPanel Height="Auto">
-                <Button Content="Circle"/>
-                <Button Content="Line"/>
-                <Button Content="Rectangle"/>
-                <Button Content="Square"/>
-                <Button Content="Sketch"/>
+        <StackPanel Margin="0,50" Height="Auto" Background="{Binding BGLayer}" DockPanel.Dock="Left" HorizontalAlignment="Left">
+            <StackPanel x:Name="mDrawOptionPanel" Height="Auto" Background="{Binding BGLayer}">
+                <ToggleButton Content="Circle"/>
+                <ToggleButton Content="Line"/>
+                <ToggleButton Content="PLine"/>
+                <ToggleButton Content="Rectangle"/>
+                <ToggleButton Content="Square"/>
+                <ToggleButton Content="Sketch"/>
             </StackPanel>
         </StackPanel>
     </DockPanel>
