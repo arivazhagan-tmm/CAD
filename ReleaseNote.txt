@@ -20,3 +20,6 @@ Features of CAD2D:
 	5. File Save / Open:
 		a. The drawings can be saved and loaded as a text file.
 		b. Ctrl + S and Ctrl + O shows the file explorer and existing drawings can be stroed/loaded to a text file.
+	
+	6. Transformations:
+		a. Drawn shapes in the desing space can be moved or mirrored using the options provided.
