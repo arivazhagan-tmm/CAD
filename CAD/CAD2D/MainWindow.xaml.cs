@@ -1,11 +1,12 @@
 ﻿using System.IO;
 using System.Text;
 using System.Windows;
+using Microsoft.Win32;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Controls;
-using Microsoft.Win32;
 using System.Windows.Controls.Primitives;
+using CP = Xceed.Wpf.Toolkit.ColorPicker;
 
 namespace CAD2D;
 
@@ -31,16 +32,28 @@ public partial class MainWindow : Window {
    public Brush BGLayer { get => mBGLayer; set => mBGLayer = value; }
    /// <summary>Entities currently present in the viewport</summary>
    public List<Entity> Entities => mEntities;
+
+   public bool OrthoModeOn => mOrthoModeOn;
    #endregion
 
    #region Implementation -------------------------------------------
+   void AddEntity (Entity entity) {
+      if (entity is null) return;
+      mEntities.Add (entity);
+   }
+
+   Point GetPoint (MouseEventArgs e) {
+      var pos = e.GetPosition (this);
+      return new (pos.X, pos.Y);
+   }
+
    // Delete the selected entities from the viewport
    void Delete () {
       var entities = mEntities.SelectedEntities ();
       if (entities is null || entities.Length is 0) return;
       var deleteDwg = new Delete ();
       deleteDwg.ReceiveInput (entities);
-      deleteDwg.ActualEntities.ForEach (Remove);
+      deleteDwg.ActualEntities.ForEach (RemoveEntity);
       mUndoStack.Push (deleteDwg);
       InvalidateVisual ();
    }
@@ -48,8 +61,10 @@ public partial class MainWindow : Window {
    // Initializing drawing of selected type
    void InitiateDrawing () {
       mAction = mType switch {
-         EEntityType.Line => new DrawLine (),
          EEntityType.Circle => new DrawCircle (),
+         EEntityType.Ellipse => new DrawEllipse (),
+         EEntityType.Line => new DrawLine (),
+         EEntityType.Plane => new DrawPlane (),
          EEntityType.PLine => new DrawPLine (),
          EEntityType.Rectangle => new DrawRectangle (),
          EEntityType.Sketch => new DrawScribble (),
@@ -61,7 +76,7 @@ public partial class MainWindow : Window {
    }
 
    // Loading the cad entity data from the specified format
-   void Load (object sender, RoutedEventArgs e) {
+   void LoadDrawing (object sender, RoutedEventArgs e) {
       var dlg = new OpenFileDialog ();
       if (dlg.ShowDialog () is false) return;
       var loadDWG = new Load ();
@@ -75,40 +90,56 @@ public partial class MainWindow : Window {
    }
 
    void OnDrawSelection (object sender, RoutedEventArgs e) {
-      if (sender is ToggleButton btn && Enum.TryParse (btn.Content.ToString (), out mType)) {
+      if (sender is ToggleButton btn) {
+         if (Enum.TryParse (btn.Content.ToString (), out mType)) {
+            ShowMessage ($"{mType}");
+            InitiateDrawing ();
+         } else if (Enum.TryParse (btn.Content.ToString (), out ETransformation edit)) {
+            mAction = edit switch {
+               ETransformation.Move => new Move (),
+               ETransformation.Mirror => new Mirror (),
+               _ => null
+            };
+         }
          mDrawOptionPanel.Children.OfType<ToggleButton> ().ToList ().ForEach (b => { if (b != btn) b.IsChecked = false; });
-         ShowMessage ($"{mType}");
-         InitiateDrawing ();
       }
    }
 
    void OnMouseMove (object sender, MouseEventArgs e) {
-      var pt = e.GetPosition (this);
-      if (mOrthoOn && mAction is DrawLine dwg && dwg.Started) pt = mFirstPoint.GetOrthoPoint (pt);
-      mCurrentMousePoint = pt;
+      mCurrentMousePoint = GetPoint (e);
+      //if (e.MiddleButton is MouseButtonState.Pressed) {
+      //   var (dx, dy) = mTemp.Diff (mCurrentMousePoint);
+      //   dx *= -0.125;
+      //   dy *= -0.125;
+      //   var v = new Vector (dx, dy);
+      //   mEntities.ForEach (e => e.Transform (ETransformation.Move, v));
+      //}
       ResetSnapPoint ();
-      if (mSnapOn) {
+      if (mSnapModeOn) {
          foreach (var entity in mEntities) {
-            if (pt.HasNearestPoint (entity.Vertices, 15, out var nearestPoint)) {
+            if (mCurrentMousePoint.HasNearestPoint (entity.Vertices, 15, out var nearestPoint)) {
                mSnapPoint = nearestPoint;
                break;
             }
          }
       }
-      mCoordinatesTBlock.Text = $"X: {(int)mCurrentMousePoint.X}\tY: {(int)mCurrentMousePoint.Y}";
+      mCoordinatesTBlock.Text = $"X: {(int)mCurrentMousePoint.X}\tY: {ActualHeight - (int)mCurrentMousePoint.Y}";
       InvalidateVisual ();
    }
 
    void OnMouseLeftButtonDown (object sender, MouseButtonEventArgs e) {
       ShowMessage ();
-      var pt = e.GetPosition (this);
-      if (mSnapOn && !mSnapPoint.IsAway ()) pt = mSnapPoint;
+      var pt = GetPoint (e);
+      if (mSnapModeOn && !mSnapPoint.IsAway ()) pt = mSnapPoint;
       if (mFirstPoint.IsOrigin ()) mFirstPoint = pt;
-      if (mOrthoOn && mAction != null && mAction is DrawLine dwg && dwg.Started) pt = mFirstPoint.GetOrthoPoint (pt);
       mAction?.ReceiveInput (pt);
-      if (mAction.Completed && mAction.CreatedEntity != null) {
-         mEntities.Add (mAction.CreatedEntity);
-         mUndoStack.Push (mAction);
+      if (mAction.Completed) {
+         if (mAction.CreatedEntity != null) {
+            var entity = mAction.CreatedEntity;
+            entity.Layer = mEntityLayer;
+            AddEntity (entity);
+            mUndoStack.Push (mAction);
+         }
          InitiateDrawing ();
       } else ShowMessage (mType + ":\t" + mAction.CurrentStep);
       InvalidateVisual ();
@@ -126,11 +157,20 @@ public partial class MainWindow : Window {
       }
    }
 
+   void OnMouseWheel (object sender, MouseWheelEventArgs e) {
+      if (mEntities.Count > 0) {
+         var f = e.Delta > 0 ? 1.1 : 0.9;
+         mEntities.ForEach (e => e.Transform (ETransformation.Scale, f));
+         InvalidateVisual ();
+      }
+   }
+
    void OnLoaded (object sender, RoutedEventArgs e) {
       // Initializing fields
       mEntities = [];
       mType = EEntityType.None;
       mGridLayer = Brushes.DimGray;
+      mEntityLayer = Brushes.Black;
       mBGLayer = new SolidColorBrush (Color.FromArgb (255, 200, 200, 200));
       mPen = new (Brushes.ForestGreen, 1.0);
       mGridSize = 30;
@@ -143,8 +183,8 @@ public partial class MainWindow : Window {
       KeyDown += (s, e) => {
          if (e.Key is Key.Escape) {
             mType = 0;
-            if (mEntities.Count > 0) mEntities.ForEach (e => e.Selected = false);
-            mDrawOptionPanel.Children.OfType<ToggleButton> ().ToList ().ForEach (b => { b.IsChecked  = false; b.Focusable = false; });
+            if (mEntities.Count > 0 && mEntities.All (e => e != null)) mEntities.ForEach (e => e.Selected = false);
+            mDrawOptionPanel.Children.OfType<ToggleButton> ().ToList ().ForEach (b => { b.IsChecked = false; b.Focusable = false; });
             ShowMessage ();
             ResetSnapPoint ();
             InitiateDrawing ();
@@ -154,6 +194,8 @@ public partial class MainWindow : Window {
       MouseMove += OnMouseMove;
       MouseLeftButtonDown += OnMouseLeftButtonDown;
       MouseRightButtonDown += OnMouseRightButtonDown;
+      MouseWheel += OnMouseWheel;
+      //MouseDown += (s, e) => { if (e.ChangedButton is MouseButton.Middle) mTemp = GetPoint (e); };
       // Clears all the existing drawing from the model space
       var clearMenu = new MenuItem () { Header = "Clear" };
       clearMenu.Click += (s, e) => {
@@ -165,17 +207,28 @@ public partial class MainWindow : Window {
       };
       // Allows orthogonal line drawing
       var orthoMenu = new MenuItem () { Header = "Ortho", IsCheckable = true };
-      orthoMenu.Checked += (s, e) => { mOrthoOn = true; };
-      orthoMenu.Unchecked += (s, e) => { mOrthoOn = false; };
+      orthoMenu.Checked += (s, e) => { mOrthoModeOn = true; };
+      orthoMenu.Unchecked += (s, e) => { mOrthoModeOn = false; };
       // Shows the snap points of existing entities
       var snapMenu = new MenuItem () { Header = "Snap", IsCheckable = true };
-      snapMenu.Checked += (s, e) => { mSnapOn = true; };
-      snapMenu.Unchecked += (s, e) => { mSnapOn = false; };
+      snapMenu.Checked += (s, e) => { mSnapModeOn = true; };
+      snapMenu.Unchecked += (s, e) => { mSnapModeOn = false; };
       // Shows grid lines in the model space
       var gridMenu = new MenuItem () { Header = "Grid", IsCheckable = true };
       gridMenu.Checked += (s, e) => { mGridOn = true; };
       gridMenu.Unchecked += (s, e) => { mGridOn = false; };
       ContextMenu = new ContextMenu ();
+      var cp = new CP () { Height = 20, SelectedColor = Color.FromRgb (0, 0, 0) };
+      cp.SelectedColorChanged += (s, e) => {
+         var clr = cp.SelectedColor.Value;
+         mEntityLayer = new SolidColorBrush (Color.FromRgb (clr.R, clr.G, clr.B));
+      };
+      var layerPanel = new WrapPanel ();
+      var label = new Label () { Content = "Layer: " };
+      layerPanel.Children.Add (label);
+      layerPanel.Children.Add (cp);
+      ContextMenu.Items.Add (layerPanel);
+      ContextMenu.Items.Add (new Separator ());
       ContextMenu.Items.Add (orthoMenu);
       ContextMenu.Items.Add (snapMenu);
       ContextMenu.Items.Add (gridMenu);
@@ -184,13 +237,17 @@ public partial class MainWindow : Window {
       // Adding command bindings
       CommandBindings.Add (new (ApplicationCommands.Save, Save, (s, e) => e.CanExecute = mEntities.Count != 0));
       CommandBindings.Add (new (ApplicationCommands.SaveAs, (s, e) => { mFormat = EFileExtension.Bin; Save (s, e); }, (s, e) => e.CanExecute = mEntities.Count != 0));
-      CommandBindings.Add (new (ApplicationCommands.Open, Load));
+      CommandBindings.Add (new (ApplicationCommands.Open, LoadDrawing));
       CommandBindings.Add (new (ApplicationCommands.Delete, (s, e) => { Delete (); }, (s, e) => e.CanExecute = mEntities.Any (e => e.Selected)));
       CommandBindings.Add (new (ApplicationCommands.SelectAll, (s, e) => { mEntities.ForEach (e => e.Selected = true); InvalidateVisual (); }, (s, e) => e.CanExecute = mEntities.Count > 0));
-      CommandBindings.Add (new (ApplicationCommands.Undo, (s, e) => Undo (), (s, e) => e.CanExecute = mEntities.Count > 0 || mAction != null));
+      CommandBindings.Add (new (ApplicationCommands.Undo, (s, e) => Undo (), (s, e) => e.CanExecute = mEntities.Count > 0 || mUndoStack.Count != 0));
       CommandBindings.Add (new (ApplicationCommands.Redo, (s, e) => Redo (), (s, e) => e.CanExecute = mRedoStack.Count > 0));
       Viewport = this;
       InitiateDrawing ();
+   }
+
+   private void MainWindow_MouseUp (object sender, MouseButtonEventArgs e) {
+      throw new NotImplementedException ();
    }
 
    protected override void OnRender (DrawingContext dc) {
@@ -206,10 +263,10 @@ public partial class MainWindow : Window {
          }
       }
       // Showing snap points in the model space
-      if (mSnapOn) {
+      if (mSnapModeOn) {
          var snapSize = 5;
-         var (s1, s2) = (new Point (mSnapPoint.X - snapSize, mSnapPoint.Y - snapSize), new Point (mSnapPoint.X + snapSize, mSnapPoint.Y + snapSize));
-         dc.DrawRectangle (Brushes.LightBlue, mPen, new (s1, s2));
+         var v = new Vector (snapSize, snapSize);
+         dc.DrawRectangle (Brushes.LightBlue, mPen, new (mSnapPoint - v, mSnapPoint + v));
       }
       // Showing preview of the current drawing
       if (mAction != null && !mAction.Completed) {
@@ -220,16 +277,20 @@ public partial class MainWindow : Window {
       if (mEntities != null && mEntities.Count > 0) {
          foreach (var entity in mEntities) {
             switch (entity) {
-               case Circle c: dc.DrawEllipse (c.Layer, c.Pen, c.Center, c.Radius, c.Radius); break;
+               case Circle c: dc.DrawEllipse (Brushes.Transparent, c.Pen, c.Center, c.Radius, c.Radius); break;
+               case Ellipse e: dc.DrawEllipse (Brushes.Transparent, e.Pen, e.Center, e.XRadius, e.YRadius); break;
                case Line l: dc.DrawLine (l.Pen, l.StartPoint, l.EndPoint); break;
+               case Plane plane:
+                  foreach (var l in plane.Boundary) dc.DrawLine (l.Pen, l.StartPoint, l.EndPoint);
+                  break;
                case PLine pl:
                   for (int i = 0, len = pl.PLinePoints.Length - 1; i < len; i++) dc.DrawLine (pl.Pen, pl.PLinePoints[i], pl.PLinePoints[i + 1]);
                   break;
-               case Rectangle r: dc.DrawRectangle (r.Layer, r.Pen, r.Rect); break;
+               case Rectangle r: dc.DrawRectangle (Brushes.Transparent, r.Pen, r.Rect); break;
                case Sketch s:
                   for (int i = 0, len = s.SketchPoints.Length - 1; i < len; i++) dc.DrawLine (s.Pen, s.SketchPoints[i], s.SketchPoints[i + 1]);
                   break;
-               case Square sq: dc.DrawRectangle (sq.Layer, sq.Pen, sq.SQR); break;
+               case Square sq: dc.DrawRectangle (Brushes.Transparent, sq.Pen, sq.SQR); break;
             }
          }
       }
@@ -241,15 +302,17 @@ public partial class MainWindow : Window {
    void Redo () {
       if (mRedoStack.Count is 0) return;
       var action = mRedoStack.Pop ();
-      if (action is IEditDrawing editDwg) editDwg.EditedEntities.ForEach (Remove);
-      else if (action is Load loadDwg) mEntities.AddRange (loadDwg.LoadedEntities);
+      if (action is IEditDrawing editDwg) {
+         editDwg.ActualEntities.ForEach (RemoveEntity);
+         editDwg.EditedEntities.ForEach (AddEntity);
+      } else if (action is Load loadDwg) mEntities.AddRange (loadDwg.LoadedEntities);
       else mEntities.Add (action.CreatedEntity);
       mUndoStack.Push (action);
       InvalidateVisual ();
    }
 
    // Removing the given entity from the viewport
-   void Remove (Entity entity) {
+   void RemoveEntity (Entity entity) {
       if (entity == null && !mEntities.Contains (entity)) return;
       mEntities.Remove (entity);
    }
@@ -257,9 +320,11 @@ public partial class MainWindow : Window {
    void Undo () {
       if (mUndoStack.Count is 0) return;
       var action = mUndoStack.Pop ();
-      if (action is IEditDrawing editDwg) mEntities.AddRange (editDwg.ActualEntities);
-      else if (action is Load loadDwg) loadDwg.LoadedEntities.ForEach (Remove);
-      else Remove (action.CreatedEntity);
+      if (action is IEditDrawing editDwg) {
+         editDwg.EditedEntities.ForEach (RemoveEntity);
+         mEntities.AddRange (editDwg.ActualEntities);
+      } else if (action is Load loadDwg) loadDwg.LoadedEntities.ForEach (RemoveEntity);
+      else RemoveEntity (action.CreatedEntity);
       mRedoStack.Push (action);
       InvalidateVisual ();
    }
@@ -284,11 +349,11 @@ public partial class MainWindow : Window {
    EEntityType mType;
    EFileExtension mFormat;
    List<Entity> mEntities;
-   Brush mBGLayer, mGridLayer;
+   Brush mBGLayer, mGridLayer, mEntityLayer;
    Pen mPen, mGridPen1, mGridPen2;
-   bool mGridOn, mSnapOn, mOrthoOn;
-   Point mSnapPoint, mFirstPoint, mCurrentMousePoint;
+   bool mGridOn, mSnapModeOn, mOrthoModeOn;
    Stack<ICadAction> mUndoStack, mRedoStack;
+   Point mSnapPoint, mFirstPoint, mCurrentMousePoint, mTemp;
    #endregion
 }
 #endregion
@@ -297,11 +362,13 @@ public partial class MainWindow : Window {
 /// <summary>The file extensions to be saved or loaded</summary>
 public enum EFileExtension { Txt, Bin }
 /// <summary>Types of two dimensional entities to be drawn</summary>
-public enum EEntityType { None = 0, Arc, Circle, Line, PLine, Rectangle, Sketch, Square }
+public enum EEntityType { None = 0, Arc, Circle, Ellipse, Line, Plane, PLine, Rectangle, Sketch, Square }
 /// <summary>The quadrants of a point in a cartesian coordinate</summary>
 public enum EQuadrant { I, II, III, IV }
 /// <summary>Line types</summary>
 public enum ELineType { Axis }
+
+public enum ETransformation { Move, Join, Mirror, Delete, Rotate, Scale }
 #endregion
 
 #region Interfaces --------------------------------------------------------------------------------
@@ -391,6 +458,66 @@ public class DrawCircle : CadAction {
 }
 #endregion
 
+#region class DrawEllipse -------------------------------------------------------------------------
+public class DrawEllipse : CadAction {
+   #region Constructors ---------------------------------------------
+   public DrawEllipse () : base () {
+      mCadSteps = ["Select the center point", "Select the X radius point", "Select the Y radius point"];
+   }
+   #endregion
+
+   #region Properties -----------------------------------------------
+   public override bool Completed => mEllipseFormed;
+   #endregion
+
+   #region Methods --------------------------------------------------
+   public override void Execute () {
+      if (!Completed) return;
+      var (radX, radY) = (mCenter.Distance (mPointX), mCenter.Distance (mPointY));
+      mEntity = new Ellipse (mStartPoint, mEndPoint, radX, radY);
+      base.Execute ();
+   }
+
+   public override void ReceiveInput (object obj) {
+      if (obj is not Point pt) return;
+      if (!Started) {
+         base.ReceiveInput (obj);
+         mCenter = mStartPoint;
+      } else {
+         if (mPointX.IsOrigin ()) {
+            mPointX = pt;
+            mStepIndex++;
+         } else if (mPointY.IsOrigin ()) {
+            mPointY = pt;
+            mEllipseFormed = true;
+            Execute ();
+         }
+      }
+   }
+
+   public override void ReceivePreviewInput (object obj) {
+      if (obj is not Point pt) return;
+      if (!Started) return;
+      double radX, radY;
+      if (mPointX.IsOrigin ()) {
+         radX = mStartPoint.Distance (pt);
+         DrawingContext.DrawEllipse (mFillLayer, mDrawingPen, mCenter, radX, radX);
+      } else if (mPointY.IsOrigin ()) {
+         radX = mStartPoint.Distance (mPointX);
+         radY = mStartPoint.Distance (pt);
+         DrawingContext.DrawEllipse (mFillLayer, mDrawingPen, mCenter, radX, radY);
+      }
+      base.ReceivePreviewInput (obj);
+   }
+   #endregion
+
+   #region Private Data ---------------------------------------------
+   bool mEllipseFormed;
+   Point mCenter, mPointX, mPointY;
+   #endregion
+}
+#endregion
+
 #region class DrawLine ----------------------------------------------------------------------------
 public class DrawLine : CadAction {
    #region Constructors ---------------------------------------------
@@ -404,8 +531,14 @@ public class DrawLine : CadAction {
       base.Execute ();
    }
 
+   public override void ReceiveInput (object obj) {
+      if (Started && MainWindow.Viewport.OrthoModeOn && obj is Point pt) mEndPoint = mStartPoint.GetOrthoPoint (pt);
+      base.ReceiveInput (obj);
+   }
+
    public override void ReceivePreviewInput (object obj) {
       if (!CanViewPreview || obj is not Point previewPoint) return;
+      previewPoint = MainWindow.Viewport.OrthoModeOn ? mStartPoint.GetOrthoPoint (previewPoint) : previewPoint;
       DrawingContext.DrawLine (mDrawingPen, mStartPoint, previewPoint);
       base.ReceivePreviewInput (obj);
    }
@@ -413,6 +546,46 @@ public class DrawLine : CadAction {
 
    #region Private Data ---------------------------------------------
    ELineType mLineType;
+   #endregion
+}
+#endregion
+
+#region class DrawPlane ---------------------------------------------------------------------------
+public class DrawPlane : CadAction {
+   #region Constructors ---------------------------------------------
+   public DrawPlane () : base () { }
+   #endregion
+
+   #region Methods --------------------------------------------------
+   public override void Execute () {
+      if (!Completed) return;
+      var d = mStartPoint.Distance (mEndPoint);
+      var planeAngle = -45;
+      var (p1, p2) = (mStartPoint.RadialMove (d, planeAngle), mEndPoint.RadialMove (d, planeAngle));
+      mEntity = new Plane (mStartPoint, mEndPoint, p1, p2);
+      base.Execute ();
+   }
+
+   public override void ReceiveInput (object obj) {
+      if (Started && MainWindow.Viewport.OrthoModeOn && obj is Point pt) mEndPoint = mStartPoint.GetOrthoPoint (pt);
+      base.ReceiveInput (obj);
+   }
+
+   public override void ReceivePreviewInput (object obj) {
+      if (!CanViewPreview || obj is not Point previewPoint) return;
+      previewPoint = MainWindow.Viewport.OrthoModeOn ? mStartPoint.GetOrthoPoint (previewPoint) : previewPoint;
+      var d = mStartPoint.Distance (previewPoint);
+      var planeAngle = -45;
+      var (p1, p2) = (mStartPoint.RadialMove (d, planeAngle), previewPoint.RadialMove (d, planeAngle));
+      DrawingContext.DrawLine (mDrawingPen, mStartPoint, previewPoint);
+      DrawingContext.DrawLine (mDrawingPen, mStartPoint, p1);
+      DrawingContext.DrawLine (mDrawingPen, previewPoint, p2);
+      DrawingContext.DrawLine (mDrawingPen, p1, p2);
+      base.ReceivePreviewInput (obj);
+   }
+   #endregion
+
+   #region Private Data ---------------------------------------------
    #endregion
 }
 #endregion
@@ -581,7 +754,15 @@ public class Entity {
       get => mPen;
       set => mPen = value;
    }
-   public Brush Layer { get => mLayer; set => mLayer = value; }
+   public Brush Layer
+   {
+      get => mLayer;
+      set
+      {
+         mLayer = value;
+         mPen = new Pen (mLayer, mLineWeight);
+      }
+   }
    public Point StartPoint { get => mStartPt!; set => mStartPt = value; }
    public Point EndPoint { get => mEndPt!; set => mEndPt = value; }
    public Point Center { get => mCenter!; set => mCenter = value; }
@@ -595,16 +776,65 @@ public class Entity {
       }
       private set => mVertices = value;
    }
+   public virtual Point[] CurvePoints
+   {
+      get
+      {
+         if (mCurvePoints is null) UpdateCurvePoints ();
+         return mCurvePoints;
+      }
+      private set => mCurvePoints = value;
+   }
    public bool Selected
    {
       get => mIsSelected;
       set
       {
          mIsSelected = value;
-         mPen = mIsSelected ? new Pen (Brushes.GhostWhite, mLineWeight * 2) : new Pen (Brushes.Black, mLineWeight);
+         mPen = mIsSelected ? new Pen (Brushes.GhostWhite, mLineWeight * 2) : new Pen (mLayer, mLineWeight);
       }
    }
    public Guid EntityID => mEntityID;
+   #endregion
+
+   #region Methods --------------------------------------------------
+
+   public virtual void Transform (ETransformation transform, object value) {
+      switch (transform) {
+         case ETransformation.Scale:
+            var f = (double)value;
+            mVertices = Vertices.Select (v => v.Scale (f)).ToArray ();
+            mCenter = mCenter.Scale (f);
+            break;
+      }
+   }
+
+   public virtual Entity Transformed (ETransformation transform, object value) => new ();
+
+   public virtual void Scale (double f) {
+      (mStartPt, mEndPt) = (mStartPt.Scale (f), mEndPt.Scale (f));
+      if (mVertices is null) return;
+      mVertices = mVertices.Select (v => v.Scale (f)).ToArray ();
+   }
+   #endregion
+
+   #region Implementation -------------------------------------------
+   protected virtual Point[] TransformVertices (ETransformation transform, object value) {
+      switch (transform) {
+         case ETransformation.Move:
+            var vector = (Vector)value;
+            return Vertices.Select (v => v + vector).ToArray ();
+         case ETransformation.Mirror:
+            var mirrorLine = (Line)value;
+            return Vertices.Select (v => v.Mirror (mirrorLine)).ToArray ();
+         case ETransformation.Scale:
+            var f = (double)value;
+            return Vertices.Select (v => v.Scale (f)).ToArray ();
+         default: return Vertices;
+      }
+   }
+
+   protected virtual void UpdateCurvePoints () { }
    #endregion
 
    #region Private Data ---------------------------------------------
@@ -613,9 +843,52 @@ public class Entity {
    protected Guid mEntityID;
    protected bool mIsSelected;
    protected double mLineWeight;
-   protected Point[] mVertices;
+   protected Point[] mVertices, mCurvePoints;
    protected Point mStartPt, mEndPt, mCenter;
    protected string mEntityData => $"{mStartPt.Convert ()}{mEndPt.Convert ()}|{mPen.Brush}|{mPen.Thickness}\n";
+   #endregion
+}
+#endregion
+
+#region class Ellipse -----------------------------------------------------------------------------
+public class Ellipse : Entity {
+   #region Constructors ---------------------------------------------
+   public Ellipse (Point startPt, Point endPt, double radX, double radY) : base () {
+      (mCenter, mStartPt, mEndPt) = (startPt, startPt, endPt);
+      mXRadius = radX;
+      mYRadius = radY;
+      mLayer = Brushes.Transparent;
+   }
+   #endregion
+
+   #region Properties -----------------------------------------------
+   public double XRadius => mXRadius;
+   public double YRadius => mYRadius;
+   #endregion
+
+   #region Methods --------------------------------------------------
+   public override void Transform (ETransformation transform, object value) {
+      base.Transform (transform, value);
+      switch (transform) {
+         case ETransformation.Scale:
+            var f = (double)value;
+            mXRadius *= f;
+            mYRadius *= f;
+            break;
+      }
+   }
+
+   public override Entity Transformed (ETransformation transform, object value) {
+      var vertices = TransformVertices (transform, value);
+      var (startPt, endPt) = (vertices[0], vertices[1]);
+      return new Ellipse (startPt, endPt, mXRadius, mYRadius);
+   }
+
+   public override string ToString () => $"Ellipse{mEntityData}";
+   #endregion
+
+   #region Private Data ---------------------------------------------
+   double mXRadius, mYRadius;
    #endregion
 }
 #endregion
@@ -645,6 +918,25 @@ public class Circle : Entity, IPolygon {
    #endregion
 
    #region Methods --------------------------------------------------
+   public override void Transform (ETransformation transform, object value) {
+      base.Transform (transform, value);
+      switch (transform) {
+         case ETransformation.Scale:
+            var f = (double)value;
+            mRadius *= f;
+            var scaled = mCenter.Scale (f);
+            var (dx, dy) = scaled.Diff (mCenter);
+            mCenter = scaled + new Vector (dx, dy);
+            break;
+      }
+   }
+
+   public override Entity Transformed (ETransformation transform, object value) {
+      var vertices = TransformVertices (transform, value);
+      var (startPt, endPt) = (vertices[0], vertices[1]);
+      return new Circle (startPt, endPt);
+   }
+
    public override string ToString () => $"Circle{mEntityData}";
    #endregion
 
@@ -675,12 +967,49 @@ public class Line : Entity {
    #endregion
 
    #region Methods --------------------------------------------------
+   public override void Transform (ETransformation transform, object value) {
+      switch (transform) {
+         case ETransformation.Scale:
+            var f = (double)value;
+            var (start, end) = (mStartPt.Scale (f), mEndPt.Scale (f));
+            (mStartPt, mEndPt) = (start, end);
+            break;
+         case ETransformation.Move:
+            mVertices = TransformVertices (transform, value);
+            (mStartPt, mEndPt) = (mVertices[0], mVertices[1]);
+            break;
+      }
+   }
+
+   public override Entity Transformed (ETransformation transform, object value) {
+      var vertices = TransformVertices (transform, value);
+      return new Line (vertices[0], vertices[1]);
+   }
+
    public override string ToString () => $"Line{mEntityData}";
+   #endregion
+
+   #region Implementation -------------------------------------------
+   protected override void UpdateCurvePoints () {
+   }
    #endregion
 
    #region Private Data ---------------------------------------------
    double mAngle = double.NaN;
    #endregion
+}
+#endregion
+
+#region class Plane -------------------------------------------------------------------------------
+public class Plane : Entity {
+   public Plane (Point p1, Point p2, Point p3, Point p4) {
+      mBoundary = [new (p1, p2), new (p1, p3), new (p2, p4), new (p3, p4)];
+      mVertices = [p1, p2, p3, p4];
+   }
+
+   public Line[] Boundary => mBoundary;
+
+   Line[] mBoundary;
 }
 #endregion
 
@@ -697,6 +1026,11 @@ public class PLine : Entity {
    #endregion
 
    #region Methods --------------------------------------------------
+   public override Entity Transformed (ETransformation transform, object value) {
+      var vertices = TransformVertices (transform, value);
+      return new PLine () { PLinePoints = vertices };
+   }
+
    public override string ToString () => $"PLine{mEntityData}";
    #endregion
 
@@ -741,6 +1075,23 @@ public class Rectangle : Entity, IPolygon {
    #endregion
 
    #region Methods --------------------------------------------------
+   public override void Transform (ETransformation transform, object value) {
+      base.Transform (transform, value);
+      switch (transform) {
+         case ETransformation.Scale:
+            var f = (double)value;
+            (mStartPt, mEndPt) = (mStartPt.Scale (f), mEndPt.Scale (f));
+            mRect = new Rect (mStartPt, mEndPt);
+            break;
+      }
+   }
+
+   public override Entity Transformed (ETransformation transform, object value) {
+      var vertices = TransformVertices (transform, value);
+      var (startPt, endPt) = (vertices[0], vertices[1]);
+      return new Rectangle (startPt, endPt);
+   }
+
    public override string ToString () => $"Rectangle{mEntityData}";
    #endregion
 
@@ -758,9 +1109,16 @@ public class Sketch : Entity {
 
    #region Properties -----------------------------------------------
    public Point[] SketchPoints { get => mSketchPoints; set => mSketchPoints = value; }
+
+   public override Point[] Vertices => SketchPoints;
    #endregion
 
    #region Methods --------------------------------------------------
+   public override Entity Transformed (ETransformation transform, object value) {
+      var vertices = TransformVertices (transform, value);
+      return new Sketch () { SketchPoints = vertices };
+   }
+
    public override string ToString () {
       var pts = string.Empty;
       mSketchPoints.ToList ().ForEach (pt => pts += pt.Convert ());
@@ -777,7 +1135,8 @@ public class Sketch : Entity {
 #region class Square ------------------------------------------------------------------------------
 public class Square : Entity, IPolygon {
    #region Constructors ---------------------------------------------
-   public Square () : base () {
+   public Square (Point startPt, Point endPt) : base () {
+      (StartPoint, EndPoint) = (startPt, endPt);
       mLayer = Brushes.Transparent;
    }
    #endregion
@@ -808,6 +1167,12 @@ public class Square : Entity, IPolygon {
    #endregion
 
    #region Methods --------------------------------------------------
+   public override Entity Transformed (ETransformation transform, object value) {
+      var vertices = TransformVertices (transform, value);
+      var (startPt, endPt) = (vertices[0], vertices[1]);
+      return new Square (startPt, endPt);
+   }
+
    public override string ToString () => $"Square{mEntityData}";
    #endregion
 
@@ -819,7 +1184,7 @@ public class Square : Entity, IPolygon {
 
 #endregion
 
-#region Entity Handling----------------------------------------------------------------------------
+#region Entity Handling  --------------------------------------------------------------------------
 
 #region class CadAction ---------------------------------------------------------------------------
 /// <summary>A class that implements the systematic procedure to draw a 2D entity</summary>
@@ -834,6 +1199,7 @@ public class CadAction : ICadAction {
 
    #region Properties -----------------------------------------------
    public Entity CreatedEntity => mEntity;
+   public List<Entity> TransformedEntities => mEditedEntities;
    public bool Started => !mStartPoint.IsOrigin ();
    public virtual bool Completed => Started && !mEndPoint.IsOrigin ();
    public bool CanViewPreview => Started && DrawingContext != null;
@@ -850,7 +1216,7 @@ public class CadAction : ICadAction {
    {
       get
       {
-         if (Steps != null && Steps.Length > 0) return Steps[mStepIndex];
+         if (Steps != null && Steps.Length > 0 && mStepIndex < Steps.Length) return Steps[mStepIndex];
          return string.Empty;
       }
    }
@@ -872,7 +1238,8 @@ public class CadAction : ICadAction {
    #region Implementation -------------------------------------------
    // Assigns the given point to the either start or end point
    protected virtual void AssignPoint (Point pt) {
-      if (mStartPoint.IsOrigin ()) { mStartPoint = pt; mStepIndex++; } else if (mEndPoint.IsOrigin ()) { mEndPoint = pt; }
+      if (mStartPoint.IsOrigin ()) { mStartPoint = pt; } else if (mEndPoint.IsOrigin ()) { mEndPoint = pt; }
+      mStepIndex++;
       if (Completed) Execute ();
    }
    #endregion
@@ -882,7 +1249,7 @@ public class CadAction : ICadAction {
    protected Entity mEntity;
    protected Pen mDrawingPen;
    protected string[] mCadSteps;
-   protected List<Entity> mEntities;
+   protected List<Entity> mEntities, mEditedEntities;
    protected Brush mDrawingLayer, mFillLayer;
    protected Point mStartPoint, mEndPoint, mPreviewPoint;
    #endregion
@@ -924,22 +1291,21 @@ public class Clip : CadAction {
 public class Delete : CadAction, IEditDrawing {
    #region Properties -----------------------------------------------
    /// <summary>Unaltered entities in the viewport</summary>
-   public List<Entity> ActualEntities => mActualEntities;
+   public List<Entity> ActualEntities => mEntities;
    /// <summary>Deleted entities from the viewport</summary>
-   public List<Entity> EditedEntities => mDeletedEntities;
+   public List<Entity> EditedEntities => mEditedEntities;
    #endregion
 
    #region Methods --------------------------------------------------
    /// <summary>Receives the cad entities as object and stores them in the fields</summary>
    public override void ReceiveInput (object obj) {
       if (obj is not IEnumerable<Entity> entities || entities.Count () is 0) return;
-      mActualEntities = mDeletedEntities = entities.ToList ();
+      mEntities = mEditedEntities = entities.ToList ();
       base.ReceiveInput (obj);
    }
    #endregion
 
    #region Private Data ---------------------------------------------
-   List<Entity> mActualEntities, mDeletedEntities;
    #endregion
 }
 #endregion
@@ -997,6 +1363,127 @@ public class Load : CadAction {
    #region Private Data ---------------------------------------------
    string mFileName, mLoadStatus;
    EFileExtension mFileType;
+   #endregion
+}
+#endregion
+
+#region class Mirror ------------------------------------------------------------------------------
+public class Mirror : CadAction, IEditDrawing {
+   #region Constructors ---------------------------------------------
+   public Mirror () {
+   }
+   #endregion
+
+   #region Properties -----------------------------------------------
+   public List<Entity> ActualEntities => mEntities;
+   public List<Entity> EditedEntities => mEditedEntities;
+   #endregion
+
+   #region Methods --------------------------------------------------
+   public override void Execute () {
+      mEditedEntities = [];
+      foreach (var entity in mEntities) {
+         var mirroredEntity = entity.Transformed (ETransformation.Mirror, new Line (mStartPoint, mEndPoint));
+         MainWindow.Viewport.Entities.Add (mirroredEntity);
+         mEditedEntities.Add (mirroredEntity);
+      }
+      base.Execute ();
+   }
+
+   public override void ReceiveInput (object obj) {
+      if (mEntities is null || mEntities.Count is 0) mEntities = [.. MainWindow.Viewport.Entities.FindAll (e => e.Selected)];
+      base.ReceiveInput (obj);
+   }
+
+   public override void ReceivePreviewInput (object obj) {
+      if (obj is not Point pt || mEntities is null) return;
+      var (dx, dy) = pt.Diff (mStartPoint);
+      var vector = new Vector (dx, dy);
+      DrawingContext.DrawLine (mDrawingPen, mStartPoint, pt);
+      var mirrorLine = new Line (mStartPoint, pt);
+      foreach (var entity in mEntities) {
+         var (start, end) = (entity.StartPoint.Mirror (mirrorLine), entity.EndPoint.Mirror (mirrorLine));
+         switch (entity) {
+            case Circle c: DrawingContext.DrawEllipse (mFillLayer, mDrawingPen, start, c.Radius, c.Radius); break;
+            case Ellipse e: DrawingContext.DrawEllipse (mFillLayer, mDrawingPen, start, e.XRadius, e.YRadius); break;
+            case Line l: DrawingContext.DrawLine (mDrawingPen, start, end); break;
+            case PLine pl:
+               var pts = pl.PLinePoints.Select (p => p.Mirror (mirrorLine)).ToArray ();
+               for (int i = 0, len = pts.Length; i < len - 1; i++) DrawingContext.DrawLine (mDrawingPen, pts[i], pts[i + 1]);
+               break;
+            case Rectangle rec: DrawingContext.DrawRectangle (mFillLayer, mDrawingPen, new Rect (start, end)); break;
+            case Sketch s:
+               var sketchPts = s.SketchPoints.Select (p => p.Mirror (mirrorLine)).ToArray ();
+               for (int i = 0, len = sketchPts.Length; i < len - 1; i++) DrawingContext.DrawLine (mDrawingPen, sketchPts[i], sketchPts[i + 1]);
+               break;
+            case Square sqr: DrawingContext.DrawRectangle (mFillLayer, mDrawingPen, new Rect (start, end)); break;
+         }
+      }
+      base.ReceivePreviewInput (obj);
+   }
+   #endregion
+
+   #region Private Data ---------------------------------------------
+   #endregion
+}
+#endregion
+
+#region class Move --------------------------------------------------------------------------------
+public class Move : CadAction, IEditDrawing {
+   #region Constructors ---------------------------------------------
+   public Move () {
+      mCadSteps = ["Select the entity", "Select the start point", "Select the end point"];
+   }
+   #endregion
+
+   #region Properties -----------------------------------------------
+   public List<Entity> ActualEntities => mEntities;
+   public List<Entity> EditedEntities => mEditedEntities;
+   #endregion
+
+   #region Methods --------------------------------------------------
+   public override void Execute () {
+      mEditedEntities = [];
+      var (dx, dy) = mEndPoint.Diff (mStartPoint);
+      var vector = new Vector (dx, dy);
+      foreach (var entity in mEntities) {
+         var movedEntity = entity.Transformed (ETransformation.Move, vector);
+         movedEntity.Layer = entity.Layer;
+         MainWindow.Viewport.Entities.Add (movedEntity);
+         MainWindow.Viewport.Entities.Remove (entity);
+         mEditedEntities.Add (movedEntity);
+      }
+      base.Execute ();
+   }
+
+   public override void ReceiveInput (object obj) {
+      if (mEntities is null || mEntities.Count is 0) mEntities = [.. MainWindow.Viewport.Entities.FindAll (e => e.Selected)];
+      base.ReceiveInput (obj);
+   }
+
+   public override void ReceivePreviewInput (object obj) {
+      if (obj is not Point pt || mEntities is null) return;
+      var (dx, dy) = pt.Diff (mStartPoint);
+      var vector = new Vector (dx, dy);
+      foreach (var entity in mEntities) {
+         switch (entity) {
+            case Ellipse e: DrawingContext.DrawEllipse (mFillLayer, mDrawingPen, e.Center + vector, e.XRadius, e.YRadius); break;
+            case Circle c: DrawingContext.DrawEllipse (mFillLayer, mDrawingPen, c.Center + vector, c.Radius, c.Radius); break;
+            case Line line: DrawingContext.DrawLine (mDrawingPen, line.StartPoint + vector, line.EndPoint + vector); break;
+            case PLine pline:
+               var pts = pline.PLinePoints;
+               for (int i = 0, len = pts.Length; i < len - 1; i++) DrawingContext.DrawLine (mDrawingPen, pts[i] + vector, pts[i + 1] + vector);
+               break;
+            case Rectangle rec: DrawingContext.DrawRectangle (mFillLayer, mDrawingPen, new Rect (rec.StartPoint + vector, rec.EndPoint + vector)); break;
+            case Sketch s:
+               var sketchPts = s.SketchPoints;
+               for (int i = 0, len = sketchPts.Length; i < len - 1; i++) DrawingContext.DrawLine (mDrawingPen, sketchPts[i] + vector, sketchPts[i + 1] + vector);
+               break;
+            case Square sqr: DrawingContext.DrawRectangle (mFillLayer, mDrawingPen, new Rect (sqr.StartPoint + vector, sqr.EndPoint + vector)); break;
+         }
+      }
+      base.ReceivePreviewInput (obj);
+   }
    #endregion
 }
 #endregion
@@ -1062,6 +1549,27 @@ public class Save : CadAction {
 }
 #endregion
 
+#region class Pick --------------------------------------------------------------------------------
+public class Pick : CadAction {
+   #region Properties -----------------------------------------------
+   public override bool Completed => mPickedEntity != null;
+   #endregion
+
+   #region Methods --------------------------------------------------
+   public override void ReceiveInput (object obj) {
+      if (obj is not Point pt) return;
+      mPickedEntity = MainWindow.Viewport.Entities.Find (e => e.Vertices.Contains (pt));
+      if (Completed) mPickedEntity.Selected = true;
+      base.ReceiveInput (obj);
+   }
+   #endregion
+
+   #region Private Data ---------------------------------------------
+   Entity mPickedEntity;
+   #endregion
+}
+#endregion
+
 #endregion
 
 #region class Utility -----------------------------------------------------------------------------
@@ -1077,6 +1585,15 @@ public static class Utility {
    public static double Distance (this Point p1, Point p2) {
       var (dx, dy) = p1.Diff (p2);
       return Math.Sqrt (Math.Pow (dx, 2) + Math.Pow (dy, 2));
+   }
+
+   public static Point Mirror (this Point p, Line line) {
+      var (p1, p2) = (line.StartPoint, line.EndPoint);
+      var (dx1, dy1) = p2.Diff (p1);
+      var (dx2, dy2) = p.Diff (p1);
+      var mirrorFactor = 1 / (dx1.ToPower (2) + dy1.ToPower (2));
+      var tmp = (dx1 * dx2 + dy1 * dy2) * mirrorFactor;
+      return new Point (2 * (p1.X + tmp * dx1) - p.X, 2 * (p1.Y + tmp * dy1) - p.Y);
    }
 
    /// <summary>Finds and returns the orthogonal point for the line drawn between p1 and p2</summary>
@@ -1100,11 +1617,15 @@ public static class Utility {
    /// <summary>Checks if the points are not within the viewport or not</summary>
    public static bool IsAway (this Point pt) => pt.X < 0 || pt.Y < 0;
 
+   public static double ToPower (this double d, int val) => Math.Pow (d, val);
+
    /// <summary>Radially moves the point to the given distance and angle</summary>
    public static Point RadialMove (this Point p, double distance, double theta) {
       theta = theta.ToRadians ();
       return new (p.X + (distance * Math.Cos (theta)), p.Y + (distance * Math.Sin (theta)));
    }
+
+   public static Point Scale (this Point p, double f) => new (p.X * f, p.Y * f);
 
    /// <summary>Tries and parse the given string as the type Point</summary>
    public static bool TryParse (this string str, out Point p) {
@@ -1153,5 +1674,10 @@ public static class Utility {
    public static Entity[] SelectedEntities (this List<Entity> entities) => entities.Where (e => e.Selected).ToArray ();
 
    public static string Convert (this Point pt) => $"|{pt.X},{pt.Y}";
+
+   public static bool IsOnEntity (this Point pt, Entity entity) {
+      if (entity is null) return false;
+      return true;
+   }
 }
 #endregion
