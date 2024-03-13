@@ -43,7 +43,7 @@ public partial class MainWindow : Window {
    }
 
    Point GetPoint (MouseEventArgs e) {
-      var pos = e.GetPosition (this);
+      var pos = e.GetPosition (mDesignSpace);
       return new (pos.X, pos.Y);
    }
 
@@ -73,6 +73,12 @@ public partial class MainWindow : Window {
       };
       mFirstPoint = new ();
       ShowMessage (mType + ":\t" + mAction.CurrentStep);
+      if (mTransform != 0 && mAction is Clip clip && mEntities.Any (e => e.Selected)) {
+         mAction = mTransform switch {
+            ETransformation.Move => new Move (),
+            _ => clip
+         };
+      }
    }
 
    // Loading the cad entity data from the specified format
@@ -90,18 +96,28 @@ public partial class MainWindow : Window {
    }
 
    void OnDrawSelection (object sender, RoutedEventArgs e) {
-      if (sender is ToggleButton btn) {
-         if (Enum.TryParse (btn.Content.ToString (), out mType)) {
-            ShowMessage ($"{mType}");
-            InitiateDrawing ();
-         } else if (Enum.TryParse (btn.Content.ToString (), out ETransformation edit)) {
-            mAction = edit switch {
-               ETransformation.Move => new Move (),
-               ETransformation.Mirror => new Mirror (),
-               _ => null
-            };
-         }
-         mDrawOptionPanel.Children.OfType<ToggleButton> ().ToList ().ForEach (b => { if (b != btn) b.IsChecked = false; });
+      if (sender is not ToggleButton btn) return;
+      if (Enum.TryParse (btn.Content.ToString (), out mType)) {
+         ShowMessage ($"{mType}");
+         InitiateDrawing ();
+      } else if (Enum.TryParse (btn.Content.ToString (), out mTransform)) {
+         mAction = mTransform switch {
+            ETransformation.Move => new Move (),
+            ETransformation.Mirror => new Mirror (),
+            _ => null
+         };
+         if (!mEntities.Any (e => e.Selected)) ShowMessage ($"Select the entities to {mTransform}");
+         else ShowMessage (mTransform + ":\t" + mAction.CurrentStep);
+      }
+      mDrawOptionPanel.Children.OfType<ToggleButton> ().ToList ().ForEach (b => { if (b != btn) b.IsChecked = false; });
+   }
+
+   void OnEditSelection (object sender, RoutedEventArgs e) {
+      if (sender is not ToggleButton btn) return;
+      //mEditOptionPanel.Children.OfType<ToggleButton> ().ToList ().ForEach (b => { if (b != btn) b.IsChecked = false; });
+      if (!mEntities.Any (e => e.Selected)) {
+         mAction = new Clip ();
+         ShowMessage ($"Select the entities to {mTransform}");
       }
    }
 
@@ -167,6 +183,8 @@ public partial class MainWindow : Window {
 
    void OnLoaded (object sender, RoutedEventArgs e) {
       // Initializing fields
+      mDesignSpace = new DesignSpace ();
+      Background = new SolidColorBrush (Color.FromArgb (255, 200, 200, 200));
       mEntities = [];
       mType = EEntityType.None;
       mGridLayer = Brushes.DimGray;
@@ -197,43 +215,43 @@ public partial class MainWindow : Window {
       MouseWheel += OnMouseWheel;
       //MouseDown += (s, e) => { if (e.ChangedButton is MouseButton.Middle) mTemp = GetPoint (e); };
       // Clears all the existing drawing from the model space
-      var clearMenu = new MenuItem () { Header = "Clear" };
-      clearMenu.Click += (s, e) => {
-         mType = 0;
-         mEntities.Clear ();
-         mUndoStack.Clear ();
-         mRedoStack.Clear ();
-         InvalidateVisual ();
-      };
-      // Allows orthogonal line drawing
-      var orthoMenu = new MenuItem () { Header = "Ortho", IsCheckable = true };
-      orthoMenu.Checked += (s, e) => { mOrthoModeOn = true; };
-      orthoMenu.Unchecked += (s, e) => { mOrthoModeOn = false; };
-      // Shows the snap points of existing entities
-      var snapMenu = new MenuItem () { Header = "Snap", IsCheckable = true };
-      snapMenu.Checked += (s, e) => { mSnapModeOn = true; };
-      snapMenu.Unchecked += (s, e) => { mSnapModeOn = false; };
-      // Shows grid lines in the model space
-      var gridMenu = new MenuItem () { Header = "Grid", IsCheckable = true };
-      gridMenu.Checked += (s, e) => { mGridOn = true; };
-      gridMenu.Unchecked += (s, e) => { mGridOn = false; };
-      ContextMenu = new ContextMenu ();
-      var cp = new CP () { Height = 20, SelectedColor = Color.FromRgb (0, 0, 0) };
-      cp.SelectedColorChanged += (s, e) => {
-         var clr = cp.SelectedColor.Value;
-         mEntityLayer = new SolidColorBrush (Color.FromRgb (clr.R, clr.G, clr.B));
-      };
-      var layerPanel = new WrapPanel ();
-      var label = new Label () { Content = "Layer: " };
-      layerPanel.Children.Add (label);
-      layerPanel.Children.Add (cp);
-      ContextMenu.Items.Add (layerPanel);
-      ContextMenu.Items.Add (new Separator ());
-      ContextMenu.Items.Add (orthoMenu);
-      ContextMenu.Items.Add (snapMenu);
-      ContextMenu.Items.Add (gridMenu);
-      ContextMenu.Items.Add (new Separator ());
-      ContextMenu.Items.Add (clearMenu);
+      //var clearMenu = new MenuItem () { Header = "Clear" };
+      //clearMenu.Click += (s, e) => {
+      //   mType = 0;
+      //   mEntities.Clear ();
+      //   mUndoStack.Clear ();
+      //   mRedoStack.Clear ();
+      //   InvalidateVisual ();
+      //};
+      //// Allows orthogonal line drawing
+      //var orthoMenu = new MenuItem () { Header = "Ortho", IsCheckable = true };
+      //orthoMenu.Checked += (s, e) => { mOrthoModeOn = true; };
+      //orthoMenu.Unchecked += (s, e) => { mOrthoModeOn = false; };
+      //// Shows the snap points of existing entities
+      //var snapMenu = new MenuItem () { Header = "Snap", IsCheckable = true };
+      //snapMenu.Checked += (s, e) => { mSnapModeOn = true; };
+      //snapMenu.Unchecked += (s, e) => { mSnapModeOn = false; };
+      //// Shows grid lines in the model space
+      //var gridMenu = new MenuItem () { Header = "Grid", IsCheckable = true };
+      //gridMenu.Checked += (s, e) => { mGridOn = true; };
+      //gridMenu.Unchecked += (s, e) => { mGridOn = false; };
+      //ContextMenu = new ContextMenu ();
+      //var cp = new CP () { Height = 20, SelectedColor = Color.FromRgb (0, 0, 0) };
+      //cp.SelectedColorChanged += (s, e) => {
+      //   var clr = cp.SelectedColor.Value;
+      //   mEntityLayer = new SolidColorBrush (Color.FromRgb (clr.R, clr.G, clr.B));
+      //};
+      //var layerPanel = new WrapPanel ();
+      //var label = new Label () { Content = "Layer: " };
+      //layerPanel.Children.Add (label);
+      //layerPanel.Children.Add (cp);
+      //ContextMenu.Items.Add (layerPanel);
+      //ContextMenu.Items.Add (new Separator ());
+      //ContextMenu.Items.Add (orthoMenu);
+      //ContextMenu.Items.Add (snapMenu);
+      //ContextMenu.Items.Add (gridMenu);
+      //ContextMenu.Items.Add (new Separator ());
+      //ContextMenu.Items.Add (clearMenu);
       // Adding command bindings
       CommandBindings.Add (new (ApplicationCommands.Save, Save, (s, e) => e.CanExecute = mEntities.Count != 0));
       CommandBindings.Add (new (ApplicationCommands.SaveAs, (s, e) => { mFormat = EFileExtension.Bin; Save (s, e); }, (s, e) => e.CanExecute = mEntities.Count != 0));
@@ -246,13 +264,9 @@ public partial class MainWindow : Window {
       InitiateDrawing ();
    }
 
-   private void MainWindow_MouseUp (object sender, MouseButtonEventArgs e) {
-      throw new NotImplementedException ();
-   }
-
    protected override void OnRender (DrawingContext dc) {
       // Showing grids in the model space
-      dc.DrawRectangle (mBGLayer, mPen, new Rect (new (-1, -1), new Point (ActualWidth, ActualHeight)));
+      //dc.DrawRectangle (mBGLayer, mPen, new Rect (new (-1, -1), new Point (ActualWidth, ActualHeight)));
       if (mGridOn) {
          for (int i = 0; i < ActualWidth; i += mGridSize) {
             var j = i * 5;
@@ -302,7 +316,7 @@ public partial class MainWindow : Window {
    void Redo () {
       if (mRedoStack.Count is 0) return;
       var action = mRedoStack.Pop ();
-      if (action is IEditDrawing editDwg) {
+      if (action is IEditAction editDwg) {
          editDwg.ActualEntities.ForEach (RemoveEntity);
          editDwg.EditedEntities.ForEach (AddEntity);
       } else if (action is Load loadDwg) mEntities.AddRange (loadDwg.LoadedEntities);
@@ -320,7 +334,7 @@ public partial class MainWindow : Window {
    void Undo () {
       if (mUndoStack.Count is 0) return;
       var action = mUndoStack.Pop ();
-      if (action is IEditDrawing editDwg) {
+      if (action is IEditAction editDwg) {
          editDwg.EditedEntities.ForEach (RemoveEntity);
          mEntities.AddRange (editDwg.ActualEntities);
       } else if (action is Load loadDwg) loadDwg.LoadedEntities.ForEach (RemoveEntity);
@@ -348,6 +362,7 @@ public partial class MainWindow : Window {
    ICadAction mAction;
    EEntityType mType;
    EFileExtension mFormat;
+   ETransformation mTransform;
    List<Entity> mEntities;
    Brush mBGLayer, mGridLayer, mEntityLayer;
    Pen mPen, mGridPen1, mGridPen2;
@@ -368,7 +383,7 @@ public enum EQuadrant { I, II, III, IV }
 /// <summary>Line types</summary>
 public enum ELineType { Axis }
 
-public enum ETransformation { Move, Join, Mirror, Delete, Rotate, Scale }
+public enum ETransformation { None, Move, Join, Mirror, Delete, Rotate, Scale }
 #endregion
 
 #region Interfaces --------------------------------------------------------------------------------
@@ -392,8 +407,8 @@ public interface ICadAction {
 }
 #endregion
 
-#region interface IEditDrawing --------------------------------------------------------------------
-public interface IEditDrawing {
+#region interface IEditAction ---------------------------------------------------------------------
+public interface IEditAction {
    public List<Entity> ActualEntities { get; }
    public List<Entity> EditedEntities { get; }
 }
@@ -612,7 +627,10 @@ public class DrawPLine : CadAction {
       if (obj is string str && str is "Completed") {
          mPLineFormed = true;
          Execute ();
-      } else base.ReceiveInput (obj);
+      } else {
+         if (!mStartPoint.IsOrigin () && !mEndPoint.IsOrigin ()) mStepIndex--;
+         base.ReceiveInput (obj);
+      }
    }
 
    public override void ReceivePreviewInput (object obj) {
@@ -1288,7 +1306,7 @@ public class Clip : CadAction {
 #endregion
 
 #region class Delete ------------------------------------------------------------------------------
-public class Delete : CadAction, IEditDrawing {
+public class Delete : CadAction, IEditAction {
    #region Properties -----------------------------------------------
    /// <summary>Unaltered entities in the viewport</summary>
    public List<Entity> ActualEntities => mEntities;
@@ -1368,7 +1386,7 @@ public class Load : CadAction {
 #endregion
 
 #region class Mirror ------------------------------------------------------------------------------
-public class Mirror : CadAction, IEditDrawing {
+public class Mirror : CadAction, IEditAction {
    #region Constructors ---------------------------------------------
    public Mirror () {
    }
@@ -1429,10 +1447,11 @@ public class Mirror : CadAction, IEditDrawing {
 #endregion
 
 #region class Move --------------------------------------------------------------------------------
-public class Move : CadAction, IEditDrawing {
+public class Move : CadAction, IEditAction {
    #region Constructors ---------------------------------------------
    public Move () {
-      mCadSteps = ["Select the entity", "Select the start point", "Select the end point"];
+      mCadSteps = ["Select any vertices to move", "Select the desired location"];
+      mEntities = [.. MainWindow.Viewport.Entities.FindAll (e => e.Selected)];
    }
    #endregion
 
@@ -1457,7 +1476,7 @@ public class Move : CadAction, IEditDrawing {
    }
 
    public override void ReceiveInput (object obj) {
-      if (mEntities is null || mEntities.Count is 0) mEntities = [.. MainWindow.Viewport.Entities.FindAll (e => e.Selected)];
+      if (mEntities.Count is 0) return;
       base.ReceiveInput (obj);
    }
 
@@ -1666,9 +1685,7 @@ public static class Utility {
    }
 
    /// <summary>Checks if the entity is inside the bound or not</summary>
-   public static bool IsInside (this Entity entity, Bound b) {
-      return entity.Vertices.All (v => v.X < b.Max.X && v.X > b.Min.X && v.Y < b.Max.Y && v.Y > b.Min.Y);
-   }
+   public static bool IsInside (this Entity entity, Bound b) => entity.Vertices.All (v => v.X < b.Max.X && v.X > b.Min.X && v.Y < b.Max.Y && v.Y > b.Min.Y);
 
    /// <summary>Returns all the entities whose property selected is true</summary>
    public static Entity[] SelectedEntities (this List<Entity> entities) => entities.Where (e => e.Selected).ToArray ();
@@ -1681,3 +1698,76 @@ public static class Utility {
    }
 }
 #endregion
+
+public class DesignSpace : Canvas {
+   #region Constructors ---------------------------------------------
+   public DesignSpace () {
+      Loaded += OnLoaded;
+   }
+   #endregion
+
+   #region Implementation -------------------------------------------
+   void OnLoaded (object sender, RoutedEventArgs e) {
+      MouseLeftButtonDown += OnMouseLeftButtonDown;
+      MouseMove += OnMouseMove;
+      Background = Brushes.Transparent;
+      mLayer = Brushes.ForestGreen;
+      mLineWeight = 1.0;
+      mDrawingPen = new (mLayer, mLineWeight);
+      // Clears all the existing drawing from the model space
+      var clearMenu = new MenuItem () { Header = "Clear" };
+      clearMenu.Click += (s, e) => {
+         mEntities.Clear ();
+         InvalidateVisual ();
+      };
+      // Allows orthogonal line drawing
+      var orthoMenu = new MenuItem () { Header = "Ortho", IsCheckable = true };
+      orthoMenu.Checked += (s, e) => { mOrthoModeOn = true; };
+      orthoMenu.Unchecked += (s, e) => { mOrthoModeOn = false; };
+      // Shows the snap points of existing entities
+      var snapMenu = new MenuItem () { Header = "Snap", IsCheckable = true };
+      snapMenu.Checked += (s, e) => { mSnapModeOn = true; };
+      snapMenu.Unchecked += (s, e) => { mSnapModeOn = false; };
+      ContextMenu = new ContextMenu ();
+      var cp = new CP () { Height = 20, SelectedColor = Color.FromRgb (0, 0, 0) };
+      cp.SelectedColorChanged += (s, e) => {
+         var clr = cp.SelectedColor.Value;
+         mLayer = new SolidColorBrush (Color.FromRgb (clr.R, clr.G, clr.B));
+      };
+      var layerPanel = new WrapPanel ();
+      var label = new Label () { Content = "Layer: " };
+      layerPanel.Children.Add (label);
+      layerPanel.Children.Add (cp);
+      ContextMenu.Items.Add (layerPanel);
+      ContextMenu.Items.Add (new Separator ());
+      ContextMenu.Items.Add (orthoMenu);
+      ContextMenu.Items.Add (snapMenu);
+      ContextMenu.Items.Add (new Separator ());
+      ContextMenu.Items.Add (clearMenu);
+   }
+
+   void OnMouseMove (object sender, MouseEventArgs e) {
+      p2 = e.GetPosition (this);
+      InvalidateVisual ();
+   }
+
+   void OnMouseLeftButtonDown (object sender, MouseButtonEventArgs e) {
+      p1 = e.GetPosition (this);
+   }
+
+   protected override void OnRender (DrawingContext dc) {
+      if (!p1.IsOrigin () && !p2.IsOrigin ()) dc.DrawLine (new Pen (mLayer, 1.0), p1, p2);
+      base.OnRender (dc);
+   }
+   #endregion
+
+   #region Private Data ---------------------------------------------
+   Point p1, p2;
+   double mLineWeight;
+   List<Entity> mEntities;
+   Brush mLayer;
+   Pen mDrawingPen;
+   bool mSnapModeOn, mOrthoModeOn;
+   Point mSnapPoint;
+   #endregion
+}

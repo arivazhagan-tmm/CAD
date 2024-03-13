@@ -9,34 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="data\Circle.jpg" />
-    <None Remove="data\Circle.png" />
-    <None Remove="data\Cirlce.jpg" />
-    <None Remove="data\Ellipse.jpg" />
-    <None Remove="data\Line.jpg" />
-    <None Remove="data\Line.png" />
-    <None Remove="data\PLine.jpg" />
-    <None Remove="data\PLine.png" />
-    <None Remove="data\Rectangle.jpg" />
-    <None Remove="data\Rectangle.png" />
-    <None Remove="data\Scribble.jpg" />
-    <None Remove="data\Sketch.jpg" />
-    <None Remove="data\Square.png" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Extended.Wpf.Toolkit" Version="4.6.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Resource Include="data\Cirlce.jpg" />
-    <Resource Include="data\Ellipse.jpg" />
-    <Resource Include="data\Line.png" />
-    <Resource Include="data\PLine.png" />
-    <Resource Include="data\Rectangle.png" />
-    <Resource Include="data\Scribble.jpg" />
-    <Resource Include="data\Sketch.jpg" />
-    <Resource Include="data\Square.png" />
   </ItemGroup>
 
 </Project>

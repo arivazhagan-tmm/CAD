@@ -75,13 +75,15 @@
                     <MenuItem Header="_Select All" Command="ApplicationCommands.SelectAll"/>
                 </MenuItem>
             </Menu>
+            <Separator BorderThickness="1.0" BorderBrush="Black" Height="1.0"/>
         </StackPanel>
         <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Background="{Binding BGLayer}">
             <TextBlock x:Name="mCoordinatesTBlock" Margin="20, 0,0 0"/>
             <TextBlock x:Name="mPromptTBlock" Width="Auto"/>
         </StackPanel>
-        <StackPanel Margin="0,50" Height="Auto" Background="{Binding BGLayer}" DockPanel.Dock="Left" HorizontalAlignment="Left">
+        <StackPanel DockPanel.Dock="Left"  Margin="0,50" Height="Auto" Background="{Binding BGLayer}" HorizontalAlignment="Left">
             <StackPanel x:Name="mDrawOptionPanel" Height="Auto" Background="{Binding BGLayer}">
+                <ToggleButton Content="Arc"/>
                 <ToggleButton Content="Circle"/>
                 <ToggleButton Content="Ellipse"/>
                 <ToggleButton Content="Line"/>
@@ -92,9 +94,6 @@
                 <ToggleButton Content="Sketch"/>
             </StackPanel>
         </StackPanel>
-        <StackPanel Margin="0,50" Height="Auto" Background="{Binding BGLayer}" DockPanel.Dock="Right" HorizontalAlignment="Right">
-            <ToggleButton Content="Move"/>
-            <ToggleButton Content="Mirror"/>
-        </StackPanel>
+        <local:DesignSpace x:Name="mDesignSpace"/>
     </DockPanel>
 </Window>
