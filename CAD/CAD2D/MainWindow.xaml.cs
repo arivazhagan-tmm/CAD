@@ -58,6 +58,8 @@ public partial class MainWindow : Window {
       InvalidateVisual ();
    }
 
+   bool CanTransform () => mEntities != null && mEntities.Count > 0 && mEntities.Any (e => e.Selected) && mTransform != ETransformation.None;
+
    // Initializing drawing of selected type
    void InitiateDrawing () {
       mAction = mType switch {
@@ -75,6 +77,20 @@ public partial class MainWindow : Window {
       ShowMessage (mType + ":\t" + mAction.CurrentStep);
    }
 
+   void InitiateTransform () {
+      if (!CanTransform ()) {
+         mAction = new Clip ();
+         ShowMessage ($"Select the entities to {mTransform}");
+         return;
+      }
+      mAction = mTransform switch {
+         ETransformation.Move => new Move (),
+         ETransformation.Mirror => new Mirror (),
+         _ => null
+      };
+      ShowMessage (mTransform + ":\t" + mAction.CurrentStep);
+   }
+
    // Loading the cad entity data from the specified format
    void LoadDrawing (object sender, RoutedEventArgs e) {
       var dlg = new OpenFileDialog ();
@@ -89,41 +105,23 @@ public partial class MainWindow : Window {
       InvalidateVisual ();
    }
 
-   void OnDrawSelection (object sender, RoutedEventArgs e) {
+   void OnButtonClicked (object sender, RoutedEventArgs e) {
       if (sender is not ToggleButton btn) return;
-      if (Enum.TryParse (btn.Content.ToString (), out mType)) {
-         ShowMessage ($"{mType}");
-         InitiateDrawing ();
-      } else if (Enum.TryParse (btn.Content.ToString (), out mTransform)) {
-         mAction = mTransform switch {
-            ETransformation.Move => new Move (),
-            ETransformation.Mirror => new Mirror (),
-            _ => null
-         };
-         if (!mEntities.Any (e => e.Selected)) ShowMessage ($"Select the entities to {mTransform}");
-         else ShowMessage (mTransform + ":\t" + mAction.CurrentStep);
-      }
+      if (btn.Tag is "Draw" && Enum.TryParse (btn.Content.ToString (), out mType)) InitiateDrawing ();
+      else if (btn.Tag is "Edit" && Enum.TryParse (btn.Content.ToString (), out mTransform)) InitiateTransform ();
       mDrawOptionPanel.Children.OfType<ToggleButton> ().ToList ().ForEach (b => { if (b != btn) b.IsChecked = false; });
-   }
-
-   void OnEditSelection (object sender, RoutedEventArgs e) {
-      if (sender is not ToggleButton btn) return;
-      //mEditOptionPanel.Children.OfType<ToggleButton> ().ToList ().ForEach (b => { if (b != btn) b.IsChecked = false; });
-      if (!mEntities.Any (e => e.Selected)) {
-         mAction = new Clip ();
-         ShowMessage ($"Select the entities to {mTransform}");
-      }
+      mEditOptionPanel.Children.OfType<ToggleButton> ().ToList ().ForEach (b => { if (b != btn) b.IsChecked = false; });
    }
 
    void OnMouseMove (object sender, MouseEventArgs e) {
       mCurrentMousePoint = GetPoint (e);
-      //if (e.MiddleButton is MouseButtonState.Pressed) {
-      //   var (dx, dy) = mTemp.Diff (mCurrentMousePoint);
-      //   dx *= -0.125;
-      //   dy *= -0.125;
-      //   var v = new Vector (dx, dy);
-      //   mEntities.ForEach (e => e.Transform (ETransformation.Move, v));
-      //}
+      if (e.MiddleButton is MouseButtonState.Pressed) {
+         var (dx, dy) = mTemp.Diff (mCurrentMousePoint);
+         dx *= -0.0125;
+         dy *= -0.0125;
+         var v = new Vector (dx, dy);
+         mEntities.ForEach (e => e.Transform (ETransformation.Move, v));
+      }
       ResetSnapPoint ();
       if (mSnapModeOn) {
          foreach (var entity in mEntities) {
@@ -144,6 +142,12 @@ public partial class MainWindow : Window {
       if (mFirstPoint.IsOrigin ()) mFirstPoint = pt;
       mAction?.ReceiveInput (pt);
       if (mAction.Completed) {
+         if(mAction is Clip && mTransform != ETransformation.None) {
+            if (CanTransform ()) {
+               InitiateTransform ();
+               return;
+            } else mType = EEntityType.None;
+         }
          if (mAction.CreatedEntity != null) {
             var entity = mAction.CreatedEntity;
             entity.Layer = mEntityLayer;
@@ -151,7 +155,7 @@ public partial class MainWindow : Window {
             mUndoStack.Push (mAction);
          }
          InitiateDrawing ();
-      } else ShowMessage (mType + ":\t" + mAction.CurrentStep);
+      } else ShowMessage (mAction.CurrentStep);
       InvalidateVisual ();
    }
 
@@ -192,13 +196,7 @@ public partial class MainWindow : Window {
       // Events
       KeyDown += (s, e) => {
          if (e.Key is Key.Escape) {
-            mType = 0;
-            if (mEntities.Count > 0 && mEntities.All (e => e != null)) mEntities.ForEach (e => e.Selected = false);
-            mDrawOptionPanel.Children.OfType<ToggleButton> ().ToList ().ForEach (b => { b.IsChecked = false; b.Focusable = false; });
-            ShowMessage ();
-            ResetSnapPoint ();
-            InitiateDrawing ();
-            InvalidateVisual ();
+            Reset ();
          }
       };
       MouseMove += OnMouseMove;
@@ -249,11 +247,17 @@ public partial class MainWindow : Window {
       CommandBindings.Add (new (ApplicationCommands.SaveAs, (s, e) => { mFormat = EFileExtension.Bin; Save (s, e); }, (s, e) => e.CanExecute = mEntities.Count != 0));
       CommandBindings.Add (new (ApplicationCommands.Open, LoadDrawing));
       CommandBindings.Add (new (ApplicationCommands.Delete, (s, e) => { Delete (); }, (s, e) => e.CanExecute = mEntities.Any (e => e.Selected)));
-      CommandBindings.Add (new (ApplicationCommands.SelectAll, (s, e) => { mEntities.ForEach (e => e.Selected = true); InvalidateVisual (); }, (s, e) => e.CanExecute = mEntities.Count > 0));
+      CommandBindings.Add (new (ApplicationCommands.SelectAll, (s, e) => HighlightEntities(), (s, e) => e.CanExecute = mEntities.Count > 0));
       CommandBindings.Add (new (ApplicationCommands.Undo, (s, e) => Undo (), (s, e) => e.CanExecute = mEntities.Count > 0 || mUndoStack.Count != 0));
       CommandBindings.Add (new (ApplicationCommands.Redo, (s, e) => Redo (), (s, e) => e.CanExecute = mRedoStack.Count > 0));
       Viewport = this;
       InitiateDrawing ();
+   }
+
+   void HighlightEntities () {
+      mEntities.ForEach (e => e.Selected = true);
+      if (mTransform != ETransformation.None) InitiateTransform ();
+      InvalidateVisual ();
    }
 
    protected override void OnRender (DrawingContext dc) {
@@ -300,10 +304,22 @@ public partial class MainWindow : Window {
             }
          }
       }
+      //if (CanTransform ()) InitiateTransform ();
       base.OnRender (dc);
    }
 
    void ResetSnapPoint () => mSnapPoint = new (-10, -10);
+
+   void Reset () {
+      mType = 0;
+      mAction = new Clip ();
+      mDrawOptionPanel.Children.OfType<ToggleButton> ().ToList ().ForEach (b => { b.IsChecked = false; });
+      mEditOptionPanel.Children.OfType<ToggleButton> ().ToList ().ForEach (b => { b.IsChecked = false; });
+      if (mEntities.Count > 0 && mEntities.All (e => e != null)) mEntities.ForEach (e => e.Selected = false);
+      ShowMessage ();
+      ResetSnapPoint ();
+      InvalidateVisual ();
+   }
 
    void Redo () {
       if (mRedoStack.Count is 0) return;
@@ -1473,7 +1489,7 @@ public class Move : CadAction, IEditAction {
    }
 
    public override void ReceivePreviewInput (object obj) {
-      if (obj is not Point pt || mEntities is null) return;
+      if (obj is not Point pt || mEntities is null || mStartPoint.IsOrigin ()) return;
       var (dx, dy) = pt.Diff (mStartPoint);
       var vector = new Vector (dx, dy);
       foreach (var entity in mEntities) {

@@ -21,7 +21,7 @@
             <Setter Property="HorizontalAlignment" Value="Left"/>
         </Style>
         <Style TargetType="ToggleButton">
-            <EventSetter Event="Checked" Handler="OnDrawSelection"/>
+            <EventSetter Event="Checked" Handler="OnButtonClicked"/>
             <Setter Property="Height" Value="25"/>
             <Setter Property="Width" Value="80"/>
             <Setter Property="Margin" Value="5"/>
@@ -83,14 +83,20 @@
         </StackPanel>
         <StackPanel DockPanel.Dock="Left"  Margin="0,50" Height="Auto" Background="{Binding BGLayer}" HorizontalAlignment="Left">
             <StackPanel x:Name="mDrawOptionPanel" Height="Auto" Background="{Binding BGLayer}">
-                <ToggleButton Content="Circle"/>
-                <ToggleButton Content="Ellipse"/>
-                <ToggleButton Content="Line"/>
-                <ToggleButton Content="Plane"/>
-                <ToggleButton Content="PLine"/>
-                <ToggleButton Content="Rectangle"/>
-                <ToggleButton Content="Square"/>
-                <ToggleButton Content="Sketch"/>
+                <ToggleButton Content="Circle" Tag="Draw"/>
+                <ToggleButton Content="Ellipse" Tag="Draw"/>
+                <ToggleButton Content="Line" Tag="Draw"/>
+                <ToggleButton Content="Plane" Tag="Draw"/>
+                <ToggleButton Content="PLine" Tag="Draw"/>
+                <ToggleButton Content="Rectangle" Tag="Draw"/>
+                <ToggleButton Content="Square" Tag="Draw"/>
+                <ToggleButton Content="Sketch" Tag="Draw"/>
+            </StackPanel>
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Left"  Margin="0,50" Height="Auto" Background="{Binding BGLayer}" HorizontalAlignment="Left">
+            <StackPanel x:Name="mEditOptionPanel" Height="Auto" Background="{Binding BGLayer}">
+                <ToggleButton Content="Move" Tag="Edit"/>
+                <ToggleButton Content="Mirror" Tag="Edit"/>
             </StackPanel>
         </StackPanel>
     </DockPanel>
