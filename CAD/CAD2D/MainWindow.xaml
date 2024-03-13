@@ -83,7 +83,6 @@
         </StackPanel>
         <StackPanel DockPanel.Dock="Left"  Margin="0,50" Height="Auto" Background="{Binding BGLayer}" HorizontalAlignment="Left">
             <StackPanel x:Name="mDrawOptionPanel" Height="Auto" Background="{Binding BGLayer}">
-                <ToggleButton Content="Arc"/>
                 <ToggleButton Content="Circle"/>
                 <ToggleButton Content="Ellipse"/>
                 <ToggleButton Content="Line"/>
@@ -94,6 +93,5 @@
                 <ToggleButton Content="Sketch"/>
             </StackPanel>
         </StackPanel>
-        <local:DesignSpace x:Name="mDesignSpace"/>
     </DockPanel>
 </Window>

@@ -43,7 +43,7 @@ public partial class MainWindow : Window {
    }
 
    Point GetPoint (MouseEventArgs e) {
-      var pos = e.GetPosition (mDesignSpace);
+      var pos = e.GetPosition (this);
       return new (pos.X, pos.Y);
    }
 
@@ -73,12 +73,6 @@ public partial class MainWindow : Window {
       };
       mFirstPoint = new ();
       ShowMessage (mType + ":\t" + mAction.CurrentStep);
-      if (mTransform != 0 && mAction is Clip clip && mEntities.Any (e => e.Selected)) {
-         mAction = mTransform switch {
-            ETransformation.Move => new Move (),
-            _ => clip
-         };
-      }
    }
 
    // Loading the cad entity data from the specified format
@@ -183,8 +177,6 @@ public partial class MainWindow : Window {
 
    void OnLoaded (object sender, RoutedEventArgs e) {
       // Initializing fields
-      mDesignSpace = new DesignSpace ();
-      Background = new SolidColorBrush (Color.FromArgb (255, 200, 200, 200));
       mEntities = [];
       mType = EEntityType.None;
       mGridLayer = Brushes.DimGray;
@@ -213,45 +205,45 @@ public partial class MainWindow : Window {
       MouseLeftButtonDown += OnMouseLeftButtonDown;
       MouseRightButtonDown += OnMouseRightButtonDown;
       MouseWheel += OnMouseWheel;
-      //MouseDown += (s, e) => { if (e.ChangedButton is MouseButton.Middle) mTemp = GetPoint (e); };
-      // Clears all the existing drawing from the model space
-      //var clearMenu = new MenuItem () { Header = "Clear" };
-      //clearMenu.Click += (s, e) => {
-      //   mType = 0;
-      //   mEntities.Clear ();
-      //   mUndoStack.Clear ();
-      //   mRedoStack.Clear ();
-      //   InvalidateVisual ();
-      //};
-      //// Allows orthogonal line drawing
-      //var orthoMenu = new MenuItem () { Header = "Ortho", IsCheckable = true };
-      //orthoMenu.Checked += (s, e) => { mOrthoModeOn = true; };
-      //orthoMenu.Unchecked += (s, e) => { mOrthoModeOn = false; };
-      //// Shows the snap points of existing entities
-      //var snapMenu = new MenuItem () { Header = "Snap", IsCheckable = true };
-      //snapMenu.Checked += (s, e) => { mSnapModeOn = true; };
-      //snapMenu.Unchecked += (s, e) => { mSnapModeOn = false; };
-      //// Shows grid lines in the model space
-      //var gridMenu = new MenuItem () { Header = "Grid", IsCheckable = true };
-      //gridMenu.Checked += (s, e) => { mGridOn = true; };
-      //gridMenu.Unchecked += (s, e) => { mGridOn = false; };
-      //ContextMenu = new ContextMenu ();
-      //var cp = new CP () { Height = 20, SelectedColor = Color.FromRgb (0, 0, 0) };
-      //cp.SelectedColorChanged += (s, e) => {
-      //   var clr = cp.SelectedColor.Value;
-      //   mEntityLayer = new SolidColorBrush (Color.FromRgb (clr.R, clr.G, clr.B));
-      //};
-      //var layerPanel = new WrapPanel ();
-      //var label = new Label () { Content = "Layer: " };
-      //layerPanel.Children.Add (label);
-      //layerPanel.Children.Add (cp);
-      //ContextMenu.Items.Add (layerPanel);
-      //ContextMenu.Items.Add (new Separator ());
-      //ContextMenu.Items.Add (orthoMenu);
-      //ContextMenu.Items.Add (snapMenu);
-      //ContextMenu.Items.Add (gridMenu);
-      //ContextMenu.Items.Add (new Separator ());
-      //ContextMenu.Items.Add (clearMenu);
+      MouseDown += (s, e) => { if (e.ChangedButton is MouseButton.Middle) mTemp = GetPoint (e); };
+      //Clears all the existing drawing from the model space
+      var clearMenu = new MenuItem () { Header = "Clear" };
+      clearMenu.Click += (s, e) => {
+         mType = 0;
+         mEntities.Clear ();
+         mUndoStack.Clear ();
+         mRedoStack.Clear ();
+         InvalidateVisual ();
+      };
+      // Allows orthogonal line drawing
+      var orthoMenu = new MenuItem () { Header = "Ortho", IsCheckable = true };
+      orthoMenu.Checked += (s, e) => { mOrthoModeOn = true; };
+      orthoMenu.Unchecked += (s, e) => { mOrthoModeOn = false; };
+      // Shows the snap points of existing entities
+      var snapMenu = new MenuItem () { Header = "Snap", IsCheckable = true };
+      snapMenu.Checked += (s, e) => { mSnapModeOn = true; };
+      snapMenu.Unchecked += (s, e) => { mSnapModeOn = false; };
+      // Shows grid lines in the model space
+      var gridMenu = new MenuItem () { Header = "Grid", IsCheckable = true };
+      gridMenu.Checked += (s, e) => { mGridOn = true; };
+      gridMenu.Unchecked += (s, e) => { mGridOn = false; };
+      ContextMenu = new ContextMenu ();
+      var cp = new CP () { Height = 20, SelectedColor = Color.FromRgb (0, 0, 0) };
+      cp.SelectedColorChanged += (s, e) => {
+         var clr = cp.SelectedColor.Value;
+         mEntityLayer = new SolidColorBrush (Color.FromRgb (clr.R, clr.G, clr.B));
+      };
+      var layerPanel = new WrapPanel ();
+      var label = new Label () { Content = "Layer: " };
+      layerPanel.Children.Add (label);
+      layerPanel.Children.Add (cp);
+      ContextMenu.Items.Add (layerPanel);
+      ContextMenu.Items.Add (new Separator ());
+      ContextMenu.Items.Add (orthoMenu);
+      ContextMenu.Items.Add (snapMenu);
+      ContextMenu.Items.Add (gridMenu);
+      ContextMenu.Items.Add (new Separator ());
+      ContextMenu.Items.Add (clearMenu);
       // Adding command bindings
       CommandBindings.Add (new (ApplicationCommands.Save, Save, (s, e) => e.CanExecute = mEntities.Count != 0));
       CommandBindings.Add (new (ApplicationCommands.SaveAs, (s, e) => { mFormat = EFileExtension.Bin; Save (s, e); }, (s, e) => e.CanExecute = mEntities.Count != 0));
@@ -266,7 +258,7 @@ public partial class MainWindow : Window {
 
    protected override void OnRender (DrawingContext dc) {
       // Showing grids in the model space
-      //dc.DrawRectangle (mBGLayer, mPen, new Rect (new (-1, -1), new Point (ActualWidth, ActualHeight)));
+      dc.DrawRectangle (mBGLayer, mPen, new Rect (new (-1, -1), new Point (ActualWidth, ActualHeight)));
       if (mGridOn) {
          for (int i = 0; i < ActualWidth; i += mGridSize) {
             var j = i * 5;
@@ -1699,6 +1691,7 @@ public static class Utility {
 }
 #endregion
 
+#region class DesignSpace -------------------------------------------------------------------------
 public class DesignSpace : Canvas {
    #region Constructors ---------------------------------------------
    public DesignSpace () {
@@ -1771,3 +1764,4 @@ public class DesignSpace : Canvas {
    Point mSnapPoint;
    #endregion
 }
+#endregion
