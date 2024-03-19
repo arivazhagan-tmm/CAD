@@ -9,7 +9,6 @@
     <Window.Resources>
         <Style TargetType="StackPanel">
             <Setter Property="Height" Value="20"/>
-            <Setter Property="Background" Value="Black"/>
             <Setter Property="VerticalAlignment" Value="Top"/>
         </Style>
         <Style TargetType="TextBlock">
@@ -75,7 +74,6 @@
                     <MenuItem Header="_Select All" Command="ApplicationCommands.SelectAll"/>
                 </MenuItem>
             </Menu>
-            <Separator BorderThickness="1.0" BorderBrush="Black" Height="1.0"/>
         </StackPanel>
         <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Background="{Binding BGLayer}">
             <TextBlock x:Name="mCoordinatesTBlock" Margin="20, 0,0 0"/>

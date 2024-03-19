@@ -422,17 +422,6 @@ public interface IEditAction {
 }
 #endregion
 
-#region interface IPolygon ------------------------------------------------------------------------
-public interface IPolygon {
-   #region Properties -----------------------------------------------
-   public double Perimeter { get; }
-   public double Area { get; }
-   public virtual int NumberOfSides { get => 0; }
-   public Point[] ConvexHull { get; }
-   #endregion
-}
-#endregion
-
 #endregion
 
 #region struct Bound ------------------------------------------------------------------------------
@@ -566,10 +555,6 @@ public class DrawLine : CadAction {
       base.ReceivePreviewInput (obj);
    }
    #endregion
-
-   #region Private Data ---------------------------------------------
-   ELineType mLineType;
-   #endregion
 }
 #endregion
 
@@ -658,7 +643,6 @@ public class DrawPLine : CadAction {
 
    #region Private Data ---------------------------------------------
    bool mPLineFormed;
-   ELineType mLineType;
    List<Point> mPLinePoints = [];
    #endregion
 }
@@ -920,7 +904,7 @@ public class Ellipse : Entity {
 #endregion
 
 #region class Circle ------------------------------------------------------------------------------
-public class Circle : Entity, IPolygon {
+public class Circle : Entity {
    #region Constructors ---------------------------------------------
    public Circle (Point startPt, Point endPt) : base () {
       (mCenter, mStartPt, mEndPt) = (startPt, startPt, endPt);
@@ -929,7 +913,6 @@ public class Circle : Entity, IPolygon {
    #endregion
 
    #region Properties -----------------------------------------------
-   public double Diameter => 2 * Radius;
    public double Radius
    {
       get
@@ -938,9 +921,6 @@ public class Circle : Entity, IPolygon {
 
       }
    }
-   public double Area => Math.PI * Math.Pow (mRadius, 2);
-   public double Perimeter => Math.PI * Diameter;
-   public Point[] ConvexHull => [];
    #endregion
 
    #region Methods --------------------------------------------------
@@ -1067,7 +1047,7 @@ public class PLine : Entity {
 #endregion
 
 #region class Rectangle ---------------------------------------------------------------------------
-public class Rectangle : Entity, IPolygon {
+public class Rectangle : Entity {
    #region Constructors ---------------------------------------------
    public Rectangle (Point startPt, Point endPt) : base () {
       (StartPoint, EndPoint) = (startPt, endPt);
@@ -1086,7 +1066,6 @@ public class Rectangle : Entity, IPolygon {
    }
    public double Width => mRect.Width;
    public double Height => mRect.Height;
-   public double Area => Width * Height;
    public override Point[] Vertices
    {
       get
@@ -1095,9 +1074,6 @@ public class Rectangle : Entity, IPolygon {
          return mVertices!;
       }
    }
-   public double Perimeter => 2 * (Height + Width);
-   public int NumberOfSides => 4;
-   public Point[] ConvexHull => mVertices;
    #endregion
 
    #region Methods --------------------------------------------------
@@ -1159,7 +1135,7 @@ public class Sketch : Entity {
 #endregion
 
 #region class Square ------------------------------------------------------------------------------
-public class Square : Entity, IPolygon {
+public class Square : Entity {
    #region Constructors ---------------------------------------------
    public Square (Point startPt, Point endPt) : base () {
       (StartPoint, EndPoint) = (startPt, endPt);
@@ -1177,7 +1153,6 @@ public class Square : Entity, IPolygon {
       }
    }
    public double Side => mSquare.Width;
-   public double Area => Side * Side;
    public override Point[] Vertices
    {
       get
@@ -1187,9 +1162,6 @@ public class Square : Entity, IPolygon {
          return mVertices!;
       }
    }
-   public double Perimeter => 4 * Side;
-   public int NumberOfSides => 4;
-   public Point[] ConvexHull => mVertices;
    #endregion
 
    #region Methods --------------------------------------------------
@@ -1704,80 +1676,5 @@ public static class Utility {
       if (entity is null) return false;
       return true;
    }
-}
-#endregion
-
-#region class DesignSpace -------------------------------------------------------------------------
-public class DesignSpace : Canvas {
-   #region Constructors ---------------------------------------------
-   public DesignSpace () {
-      Loaded += OnLoaded;
-   }
-   #endregion
-
-   #region Implementation -------------------------------------------
-   void OnLoaded (object sender, RoutedEventArgs e) {
-      MouseLeftButtonDown += OnMouseLeftButtonDown;
-      MouseMove += OnMouseMove;
-      Background = Brushes.Transparent;
-      mLayer = Brushes.ForestGreen;
-      mLineWeight = 1.0;
-      mDrawingPen = new (mLayer, mLineWeight);
-      // Clears all the existing drawing from the model space
-      var clearMenu = new MenuItem () { Header = "Clear" };
-      clearMenu.Click += (s, e) => {
-         mEntities.Clear ();
-         InvalidateVisual ();
-      };
-      // Allows orthogonal line drawing
-      var orthoMenu = new MenuItem () { Header = "Ortho", IsCheckable = true };
-      orthoMenu.Checked += (s, e) => { mOrthoModeOn = true; };
-      orthoMenu.Unchecked += (s, e) => { mOrthoModeOn = false; };
-      // Shows the snap points of existing entities
-      var snapMenu = new MenuItem () { Header = "Snap", IsCheckable = true };
-      snapMenu.Checked += (s, e) => { mSnapModeOn = true; };
-      snapMenu.Unchecked += (s, e) => { mSnapModeOn = false; };
-      ContextMenu = new ContextMenu ();
-      var cp = new CP () { Height = 20, SelectedColor = Color.FromRgb (0, 0, 0) };
-      cp.SelectedColorChanged += (s, e) => {
-         var clr = cp.SelectedColor.Value;
-         mLayer = new SolidColorBrush (Color.FromRgb (clr.R, clr.G, clr.B));
-      };
-      var layerPanel = new WrapPanel ();
-      var label = new Label () { Content = "Layer: " };
-      layerPanel.Children.Add (label);
-      layerPanel.Children.Add (cp);
-      ContextMenu.Items.Add (layerPanel);
-      ContextMenu.Items.Add (new Separator ());
-      ContextMenu.Items.Add (orthoMenu);
-      ContextMenu.Items.Add (snapMenu);
-      ContextMenu.Items.Add (new Separator ());
-      ContextMenu.Items.Add (clearMenu);
-   }
-
-   void OnMouseMove (object sender, MouseEventArgs e) {
-      p2 = e.GetPosition (this);
-      InvalidateVisual ();
-   }
-
-   void OnMouseLeftButtonDown (object sender, MouseButtonEventArgs e) {
-      p1 = e.GetPosition (this);
-   }
-
-   protected override void OnRender (DrawingContext dc) {
-      if (!p1.IsOrigin () && !p2.IsOrigin ()) dc.DrawLine (new Pen (mLayer, 1.0), p1, p2);
-      base.OnRender (dc);
-   }
-   #endregion
-
-   #region Private Data ---------------------------------------------
-   Point p1, p2;
-   double mLineWeight;
-   List<Entity> mEntities;
-   Brush mLayer;
-   Pen mDrawingPen;
-   bool mSnapModeOn, mOrthoModeOn;
-   Point mSnapPoint;
-   #endregion
 }
 #endregion
