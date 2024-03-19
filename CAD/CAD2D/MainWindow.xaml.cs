@@ -947,7 +947,7 @@ public class Circle : Entity {
    #endregion
 
    #region Private Data ---------------------------------------------
-   double mRadius, mArea, mPerimeter;
+   double mRadius;
    #endregion
 }
 #endregion
